@@ -1,5 +1,5 @@
 {
-  "domain": "anipub.xyz",
+  "domain": "https://xtunnel-production.up.railway.app/",
   "http_port": 8080,
   "https_port": 8443,
   "ctrl_port": 7000,
