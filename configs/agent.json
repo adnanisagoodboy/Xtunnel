@@ -1,0 +1,14 @@
+{
+  "server_addr": "localhost:7000",
+  "auth_token": "",
+  "local_addr": "localhost:3000",
+  "proto": "http",
+  "subdomain": "",
+  "custom_domain": "",
+  "hmac_secret": "",
+  "basic_user": "",
+  "basic_pass": "",
+  "ip_allow_list": [],
+  "ip_block_list": [],
+  "tls_skip_verify": false
+}

@@ -1,0 +1,15 @@
+{
+  "domain": "anipub.xyz",
+  "http_port": 8080,
+  "https_port": 8443,
+  "ctrl_port": 7000,
+  "ssh_port": 2222,
+  "api_port": 7001,
+  "tls_cert": "",
+  "tls_key": "",
+  "jwt_secret": "68e0451d3ad643b8dd1c092d88db704999f654c9f833c813688aa6d96b13fb9b",
+  "token_expiry": "24h",
+  "max_tunnels_per_user": 10,
+  "rate_limit_rps": 100,
+  "allow_anonymous": true
+}
