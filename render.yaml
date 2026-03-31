@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: xtunnel-server
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: JWT_SECRET
+        generateValue: true
+      - key: XTUNNEL_DOMAIN
+        value:adnandluffy.site 
+        # sync: false   # set this to your domain e.g. xtunnel.io
