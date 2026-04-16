@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,18 +20,19 @@ type User struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
-	Tier      string    `json:"tier"` // "free" | "pro"
+	Tier      string    `json:"tier"`
 }
 
 type Service struct {
-	secret string
-	mu     sync.RWMutex
-	users  map[string]*storedUser // email → user
+	secret   string
+	mu       sync.RWMutex
+	users    map[string]*storedUser
+	dataFile string
 }
 
 type storedUser struct {
 	User
-	PasswordHash string
+	PasswordHash string `json:"password_hash"`
 }
 
 type Claims struct {
@@ -39,9 +42,51 @@ type Claims struct {
 }
 
 func New(secret string) *Service {
-	return &Service{
-		secret: secret,
-		users:  make(map[string]*storedUser),
+	s := &Service{
+		secret:   secret,
+		users:    make(map[string]*storedUser),
+		dataFile: dataFilePath(),
+	}
+	s.load()
+	return s
+}
+
+// --- Persistence ---
+
+func dataFilePath() string {
+	dir := os.Getenv("DATA_DIR")
+	if dir == "" {
+		dir = "/tmp"
+	}
+	return filepath.Join(dir, "xtunnel-users.json")
+}
+
+func (s *Service) load() {
+	data, err := os.ReadFile(s.dataFile)
+	if os.IsNotExist(err) {
+		return
+	}
+	if err != nil {
+		log.Printf("[auth] could not load users file: %v", err)
+		return
+	}
+	var users map[string]*storedUser
+	if err := json.Unmarshal(data, &users); err != nil {
+		log.Printf("[auth] could not parse users file: %v", err)
+		return
+	}
+	s.users = users
+	log.Printf("[auth] loaded %d users from disk", len(users))
+}
+
+func (s *Service) persist() {
+	data, err := json.MarshalIndent(s.users, "", "  ")
+	if err != nil {
+		log.Printf("[auth] marshal error: %v", err)
+		return
+	}
+	if err := os.WriteFile(s.dataFile, data, 0600); err != nil {
+		log.Printf("[auth] could not save users: %v", err)
 	}
 }
 
@@ -81,9 +126,10 @@ func (s *Service) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		PasswordHash: hash,
 	}
 	s.users[req.Email] = u
+	s.persist()
 
 	token, _ := s.makeToken(u.ID, u.Email)
-	log.Printf("[auth] new user registered: %s (id=%s)", req.Email, id)
+	log.Printf("[auth] new user: %s (id=%s)", req.Email, id)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -131,28 +177,24 @@ func (s *Service) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "unauthorized", 401)
 		return
 	}
+
 	s.mu.RLock()
-	var user *storedUser
-	for _, u := range s.users {
-		if u.ID == claims.UserID {
-			user = u
-			break
-		}
-	}
+	// Look up by email (faster) since claims has email
+	u, ok := s.users[claims.Email]
 	s.mu.RUnlock()
 
-	if user == nil {
+	if !ok {
 		jsonError(w, "user not found", 404)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"user": user.User,
+		"user": u.User,
 	})
 }
 
-// --- Token logic (simple HMAC-signed JWT-like token, no external deps) ---
+// --- Token logic ---
 
 func (s *Service) makeToken(userID, email string) (string, error) {
 	exp := time.Now().Add(30 * 24 * time.Hour).Unix()
@@ -192,7 +234,6 @@ func (s *Service) ValidateRequest(r *http.Request) (*Claims, error) {
 	if strings.HasPrefix(auth, "Bearer ") {
 		return s.ValidateToken(strings.TrimPrefix(auth, "Bearer "))
 	}
-	// also accept token as query param (used by WebSocket upgrade)
 	token := r.URL.Query().Get("token")
 	if token != "" {
 		return s.ValidateToken(token)
@@ -205,8 +246,6 @@ func (s *Service) sign(payload string) string {
 	mac.Write([]byte(payload))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
-
-// --- Helpers ---
 
 func hashPassword(password, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
